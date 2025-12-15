@@ -3,9 +3,10 @@ MainWindow - Main application window for audio translator.
 """
 
 from typing import Optional, Dict
+import os
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QFrame, QProgressBar, QMessageBox, QApplication
+    QFrame, QProgressBar, QMessageBox, QApplication, QPushButton
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -14,6 +15,7 @@ from src.ui.language_selector import LanguageSelector
 from src.ui.subtitle_view import SubtitleView
 from src.ui.audio_player import AudioPlayer
 from src.ui.file_queue import FileQueueWidget
+from src.ui.export_dialog import ExportDialog
 from src.models.data_models import FileState
 from src.services.audio_processor import AudioProcessor, AudioProcessorError
 from src.services.speech_recognizer import SpeechRecognizer, SpeechRecognizerError
@@ -215,9 +217,39 @@ class MainWindow(QMainWindow):
         self.audio_player.setVisible(False)
         layout.addWidget(self.audio_player)
 
+        # 底部工具栏：文件队列 + 导出按钮
+        bottom_bar = QHBoxLayout()
+        
         # FileQueue replaces FileSelector (Requirements 1.3, 3.1)
         self.file_queue = FileQueueWidget()
-        layout.addWidget(self.file_queue)
+        bottom_bar.addWidget(self.file_queue, 1)
+        
+        # 导出按钮（右下角）
+        self.export_button = QPushButton("📄 导出字幕")
+        self.export_button.setFixedHeight(40)
+        self.export_button.setFont(QFont("Microsoft YaHei", 10))
+        self.export_button.setStyleSheet("""
+            QPushButton {
+                background-color: #F0F0F0;
+                color: #333333;
+                border: 1px solid #CCCCCC;
+                border-radius: 8px;
+                padding: 8px 16px;
+            }
+            QPushButton:hover {
+                background-color: #E0E0E0;
+                border-color: #1DB954;
+            }
+            QPushButton:disabled {
+                background-color: #F8F8F8;
+                color: #AAAAAA;
+            }
+        """)
+        self.export_button.setEnabled(False)
+        self.export_button.clicked.connect(self._on_export_clicked)
+        bottom_bar.addWidget(self.export_button)
+        
+        layout.addLayout(bottom_bar)
 
         parent.addWidget(frame)
 
@@ -274,6 +306,8 @@ class MainWindow(QMainWindow):
         self.subtitle_view.set_subtitles(manager)
         self.audio_player.load_file(file_path)
         self._show_result()
+        # 启用导出按钮
+        self.export_button.setEnabled(True)
     
     def _on_queue_changed(self, file_paths: list):
         """
@@ -350,6 +384,9 @@ class MainWindow(QMainWindow):
         self.audio_player.load_file(current_file)
         self._show_result()
         
+        # 启用导出按钮
+        self.export_button.setEnabled(True)
+        
         # Set file state to READY (Requirements 6.3)
         current_idx = self.file_queue.current_index
         self.file_queue.set_file_state(current_idx, FileState.READY)
@@ -414,6 +451,21 @@ class MainWindow(QMainWindow):
         else:
             # Queue finished - show completion message
             QMessageBox.information(self, "播放完成", "所有文件已播放完毕。")
+    
+    def _on_export_clicked(self):
+        """处理导出按钮点击"""
+        current_file = self.file_queue.current_file
+        if not current_file or current_file not in self._subtitle_cache:
+            QMessageBox.warning(self, "提示", "请先处理音频文件")
+            return
+        
+        manager = self._subtitle_cache[current_file]
+        
+        # 获取默认文件名（不含扩展名）
+        default_name = os.path.splitext(os.path.basename(current_file))[0]
+        
+        dialog = ExportDialog(manager, default_name, current_file, self)
+        dialog.exec()
 
     def closeEvent(self, event):
         """Handle window close event."""
